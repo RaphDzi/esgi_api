@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "dev": "node --env-file=.env --watch index.js"
   },
   "repository": {
     "type": "git",
@@ -13,12 +13,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/RaphDzi/esgi_api/issues"
   },
   "homepage": "https://github.com/RaphDzi/esgi_api#readme",
   "dependencies": {
-    "Express": "^3.0.1"
+    "express": "^5.2.1",
+    "mysql2": "^3.24.5"
   }
 }
