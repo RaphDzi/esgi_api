@@ -2,57 +2,12 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import pool from './db.js';
 import { createToken, authenticate, authorize } from './auth.js';
+import { validate, productSchema, productPatchSchema, loginSchema } from './validation.js';
 
 
 const app = express();
 
 app.use(express.json());
-
-// fields a client is allowed to send, with their max length in the database
-const FIELDS = {
-  name: 100,
-  description: 255,
-  price: null,
-  category: 50,
-};
-
-// check the product sent by the client, returns an error message or null
-// partial = true for PATCH : missing fields are allowed
-function validateProduct(body, partial = false) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return 'Le corps de la requête doit être un objet JSON';
-  }
-
-  for (const [field, maxLength] of Object.entries(FIELDS)) {
-    const value = body[field];
-
-    if (value === undefined) {
-      if (partial) continue;
-      return `Le champ "${field}" est obligatoire`;
-    }
-
-    if (field === 'price') {
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-        return 'Le champ "price" doit être un nombre positif';
-      }
-    } else if (typeof value !== 'string' || value.trim() === '') {
-      return `Le champ "${field}" doit être un texte non vide`;
-    } else if (value.length > maxLength) {
-      return `Le champ "${field}" ne doit pas dépasser ${maxLength} caractères`;
-    }
-  }
-
-  return null;
-}
-
-// keep only the known fields (ignore "id" or anything else sent by the client)
-function pickFields(body) {
-  const product = {};
-  for (const field of Object.keys(FIELDS)) {
-    if (body[field] !== undefined) product[field] = body[field];
-  }
-  return product;
-}
 
 // runs before every route containing :id, rejects ids like "abc" or "1 OR 1=1"
 app.param('id', (req, res, next, id) => {
@@ -82,11 +37,8 @@ app.get('/', (req, res) => {
 });
 
 //login : returns an access token valid for 5 minutes
-app.post('/auth/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-    return res.status(400).json({ error: 'Les champs "email" et "password" sont obligatoires' });
-  }
+app.post('/auth/login', validate(loginSchema), async (req, res) => {
+  const { email, password } = req.body;
 
   const [rows] = await pool.query('SELECT id, password, role FROM users WHERE email = ?', [email]);
   const user = rows[0];
@@ -115,12 +67,7 @@ app.get('/products/:id', async (req, res) => {
 });
 
 //create a product (managers and admins), the creator is saved in created_by
-app.post('/products', authenticate, authorize('manager', 'admin'), async (req, res) => {
-  const error = validateProduct(req.body);
-  if (error) {
-    return res.status(400).json({ error });
-  }
-
+app.post('/products', authenticate, authorize('manager', 'admin'), validate(productSchema), async (req, res) => {
   const { name, description, price, category } = req.body;
   const [result] = await pool.query(
     'INSERT INTO products (name, description, price, category, created_by) VALUES (?, ?, ?, ?, ?)',
@@ -130,12 +77,7 @@ app.post('/products', authenticate, authorize('manager', 'admin'), async (req, r
 });
 
 //replace a product (all fields required) : admins, or the manager who created it
-app.put('/products/:id', authenticate, authorize('manager', 'admin'), checkOwnership, async (req, res) => {
-  const error = validateProduct(req.body);
-  if (error) {
-    return res.status(400).json({ error });
-  }
-
+app.put('/products/:id', authenticate, authorize('manager', 'admin'), checkOwnership, validate(productSchema), async (req, res) => {
   const { name, description, price, category } = req.body;
   const [result] = await pool.query(
     'UPDATE products SET name = ?, description = ?, price = ?, category = ? WHERE id = ?',
@@ -149,19 +91,10 @@ app.put('/products/:id', authenticate, authorize('manager', 'admin'), checkOwner
 });
 
 //update some fields of a product : admins, or the manager who created it
-app.patch('/products/:id', authenticate, authorize('manager', 'admin'), checkOwnership, async (req, res) => {
-  const error = validateProduct(req.body, true);
-  if (error) {
-    return res.status(400).json({ error });
-  }
-
-  const fields = pickFields(req.body);
-  if (Object.keys(fields).length === 0) {
-    return res.status(400).json({ error: 'Aucun champ à modifier' });
-  }
-
+app.patch('/products/:id', authenticate, authorize('manager', 'admin'), checkOwnership, validate(productPatchSchema), async (req, res) => {
+  // req.body only contains known fields (stripUnknown) and at least one of them (min(1))
   // "SET ?" with an object becomes : SET `name` = 'x', `price` = 12
-  const [result] = await pool.query('UPDATE products SET ? WHERE id = ?', [fields, req.params.id]);
+  const [result] = await pool.query('UPDATE products SET ? WHERE id = ?', [req.body, req.params.id]);
   if (result.affectedRows === 0) {
     return res.status(404).json({ error: 'Produit introuvable' });
   }
