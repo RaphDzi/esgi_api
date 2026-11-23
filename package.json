@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "dev": "node --env-file=.env --watch index.js"
+    "dev": "node --env-file=.env --watch index.js",
+    "setup": "node --env-file=.env scripts/setup-db.js"
   },
   "repository": {
     "type": "git",
@@ -19,7 +20,9 @@
   },
   "homepage": "https://github.com/RaphDzi/esgi_api#readme",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.24.5"
   }
 }
